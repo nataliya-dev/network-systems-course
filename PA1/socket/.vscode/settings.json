@@ -1,5 +1,7 @@
 {
   "files.associations": {
-    "sstream": "c"
+    "sstream": "c",
+    "in.h": "c",
+    "fcntl.h": "c"
   }
 }
