@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -9,51 +10,30 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define PORT 8001
-#define MAXLINE 1024
-#define PACKET_SIZE 100
-#define RETRY_LIMIT 10
+#include "../transfer_file.h"
+#include "../utils.h"
 
-// TODO put these functions in separate file for server and client to share
-
-// Struct that forms a packet to be sent.
-typedef struct frame_s {
-  char data[PACKET_SIZE];
-  size_t seq;
-  size_t size;
-} frame_t;
-
-char *duplicate_str(const char *str) {
-  char *newstr = (char *)malloc(strlen(str) + 1);
-  if (newstr) {
-    strcpy(newstr, str);
+int is_cmd_arg_valid(int argc, char **argv) {
+  if (argc != 2) {
+    fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+    return -1;
   }
-  return newstr;
+
+  printf("Num arguments: %d\n", argc);
+  printf("Port: %s\n", argv[1]);
+  return 1;
 }
 
-char *VALID_COMMANDS[5] = {"get", "put", "delete", "ls", "exit"};
-int get_command_option(const char *str) {
-  char *token = strtok(duplicate_str(str), " ");
-  int len = sizeof(VALID_COMMANDS) / sizeof(VALID_COMMANDS[0]);
-  int i = 0;
-  for (i = 0; i < len; ++i) {
-    if (strcmp(VALID_COMMANDS[i], token) == 0) {
-      return i;
-    }
+int main(int argc, char **argv) {
+  if (is_cmd_arg_valid(argc, argv) == -1) {
+    exit(EXIT_FAILURE);
   }
-  return -1;
-}
 
-char *get_filename(const char *str) {
-  char *token = strtok(duplicate_str(str), " ");
-  token = strtok(NULL, " ");
-  return token;
-}
+  int port_num = atoi(argv[1]);
 
-int main() {
   int sockfd;
   struct sockaddr_in servaddr, src_addr;
-
+  socklen_t addrlen = sizeof(struct sockaddr_in);
   // Creating socket file descriptor
   if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
     perror("socket creation failed");
@@ -66,7 +46,7 @@ int main() {
   // Filling server information
   servaddr.sin_family = AF_INET;  // IPv4
   servaddr.sin_addr.s_addr = INADDR_ANY;
-  servaddr.sin_port = htons(PORT);
+  servaddr.sin_port = htons(port_num);
 
   // Bind the socket with the server address
   if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
@@ -74,80 +54,186 @@ int main() {
     exit(EXIT_FAILURE);
   }
 
-  socklen_t addrlen = sizeof(struct sockaddr_in);
-  char rcvbuf[MAXLINE];
-  printf("The server is ready to receive\n");
-  int hs_ack = 0;
-  ssize_t is_hs_recvd = recvfrom(sockfd, (char *)rcvbuf, MAXLINE, 0,
-                                 (struct sockaddr *)&src_addr, &addrlen);
+  int run_program = 1;
+  char command_buf[MAXLINE];
 
-  // TODO do not move on to next error if previous failes, just move to negative
-  // ack
-  if (is_hs_recvd == -1) {
-    perror("is_hs_recvd error");
-  }
+  while (run_program == 1) {
+    bzero(command_buf, MAXLINE);
 
-  char *recvd_addr;
-  recvd_addr = inet_ntoa(src_addr.sin_addr);
-  printf("Msg received from: %s\n", recvd_addr);
-  printf("Msg: %s\n", rcvbuf);
+    printf("\nThe server is ready to receive.\n");
+    int hs_ack = 0;
+    ssize_t is_hs_recvd = recvfrom(sockfd, (char *)command_buf, MAXLINE, 0,
+                                   (struct sockaddr *)&src_addr, &addrlen);
 
-  int option = get_command_option(rcvbuf);
-  if (option == -1) {
-    printf("error in get_command_option");
-  }
-  printf("Cmd: %s\n", VALID_COMMANDS[option]);
+    if (is_hs_recvd == -1) {
+      printf("is_hs_recvd error");
+      continue;
+    }
 
-  if (VALID_COMMANDS[option] == "put") {
-    char *filename = get_filename(rcvbuf);
-    printf("filename: %s\n", filename);
-    int file_desc = open(filename, O_CREAT | O_TRUNC | O_RDWR, S_IRWXU);
-    if (file_desc == -1) {
-      perror("error opening file");
-    } else {
+    char *recvd_addr;
+    recvd_addr = inet_ntoa(src_addr.sin_addr);
+    printf("Msg received from: %s\n", recvd_addr);
+    printf("Msg: %s\n", command_buf);
+
+    int option = get_command_option(command_buf);
+    if (option == -1) {
+      printf("error in get_command_option");
+      continue;
+    }
+    printf("Cmd: %s\n", VALID_COMMANDS[option]);
+
+    // =============================
+    // ======== PUT ================
+    // =============================
+
+    if (VALID_COMMANDS[option] == "put") {
+      char *filename = get_filename(command_buf);
+      printf("filename: %s\n", filename);
+      int file_desc = open(filename, O_CREAT | O_TRUNC | O_RDWR, S_IRWXU);
+      if (file_desc == -1) {
+        hs_ack = -1;
+        printf("error opening file");
+      } else {
+        hs_ack = 1;
+      }
+
+      ssize_t is_sent =
+          sendto(sockfd, &hs_ack, sizeof(hs_ack), 0,
+                 (const struct sockaddr *)&src_addr, sizeof(src_addr));
+      if (is_sent == -1) {
+        perror("sendto error\n");
+        exit(EXIT_FAILURE);
+      }
+
+      int is_recv_done =
+          get_file(file_desc, sockfd, (const struct sockaddr *)&src_addr,
+                   sizeof(src_addr), (struct sockaddr *)&src_addr, &addrlen);
+
+      if (is_recv_done == -1) {
+        printf("Failed to receive file.\n");
+        continue;
+      }
+
+      printf("File received.\n");
+    }
+
+    // =============================
+    // ======== GET ================
+    // =============================
+
+    else if (VALID_COMMANDS[option] == "get") {
+      char *filename = get_filename(command_buf);
+      printf("filename: %s\n", filename);
+
+      int file_desc = open(filename, O_RDWR, S_IRUSR | S_IWUSR | S_IXUSR);
+      if (file_desc == -1) {
+        perror("File open error.");
+        hs_ack = -1;
+      } else {
+        hs_ack = 1;
+      }
+
+      ssize_t is_sent =
+          sendto(sockfd, &hs_ack, sizeof(hs_ack), 0,
+                 (const struct sockaddr *)&src_addr, sizeof(src_addr));
+      if (is_sent == -1) {
+        perror("sendto error\n");
+        exit(EXIT_FAILURE);
+      }
+
+      int is_send_done =
+          send_file(file_desc, sockfd, (const struct sockaddr *)&src_addr,
+                    sizeof(src_addr), (struct sockaddr *)&src_addr, &addrlen);
+
+      if (is_send_done == -1) {
+        printf("Unable to send file. Try again.\n");
+        continue;
+      }
+
+    }
+
+    // =============================
+    // ======== EXIT ===============
+    // =============================
+
+    else if (VALID_COMMANDS[option] == "exit") {
       hs_ack = 1;
+      ssize_t is_sent =
+          sendto(sockfd, &hs_ack, sizeof(hs_ack), 0,
+                 (const struct sockaddr *)&src_addr, sizeof(src_addr));
+      if (is_sent == -1) {
+        perror("sendto error\n");
+        exit(EXIT_FAILURE);
+      }
+      printf("Graceful exit. Good bye.\n");
+      run_program = -1;
     }
 
-    ssize_t is_sent =
-        sendto(sockfd, &hs_ack, sizeof(hs_ack), 0,
-               (const struct sockaddr *)&src_addr, sizeof(src_addr));
-    if (is_sent == -1) {
-      perror("sendto error");
-      exit(EXIT_FAILURE);
-    }
+    // =============================
+    // ======== DELETE =============
+    // =============================
 
-    int is_recv_done = 0;
-    frame_t frame;
+    else if (VALID_COMMANDS[option] == "delete") {
+      char *filename = get_filename(command_buf);
+      printf("filename: %s\n", filename);
+      int is_rem = remove(filename);
 
-    while (is_recv_done == 0) {
-      memset(&frame, 0, sizeof(frame));
-
-      ssize_t is_recvd = recvfrom(sockfd, &frame, sizeof(frame), 0,
-                                  (struct sockaddr *)&src_addr, &addrlen);
-      sendto(sockfd, &frame.seq, sizeof(frame.seq), 0,
-             (const struct sockaddr *)&src_addr, sizeof(src_addr));
-
-      if (frame.seq == 0) {
-        is_recv_done = 1;
+      if (is_rem == 0) {
+        printf("File deleted successfully.\n");
+        hs_ack = 1;
+      } else {
+        perror("Delete file error.\n");
+        hs_ack = -1;
       }
 
-      ssize_t is_written = write(file_desc, frame.data, frame.size);
-      if (is_written == -1) {
-        perror("write error");
-        break;
+      ssize_t is_sent =
+          sendto(sockfd, &hs_ack, sizeof(hs_ack), 0,
+                 (const struct sockaddr *)&src_addr, sizeof(src_addr));
+      if (is_sent == -1) {
+        perror("sendto error\n");
+        exit(EXIT_FAILURE);
       }
     }
-    close(file_desc);
 
-    if (is_recv_done == 0) {
-      perror("Failed to receive file.");
-      exit(EXIT_FAILURE);
+    // =============================
+    // ======== LS =================
+    // =============================
+
+    else if (VALID_COMMANDS[option] == "ls") {
+      struct dirent **namelist;
+      file_list_t file_list;
+      memset(&file_list, 0, sizeof(file_list));
+
+      int file_num = scandir(".", &namelist, filter_dir, alphasort);
+      file_list.num_files = file_num;
+      printf("Num files: %ld\n", file_list.num_files);
+
+      if (file_num == -1) {
+        printf("Error in scandir.");
+        file_list.status = 2;
+      } else {
+        while (file_num--) {
+          strcat(file_list.data, namelist[file_num]->d_name);
+          strcat(file_list.data, ",");
+          free(namelist[file_num]);
+        }
+        file_list.status = 0;
+      }
+      free(namelist);
+      printf("Sending: %s\n", file_list.data);
+
+      ssize_t is_sent =
+          sendto(sockfd, &file_list, sizeof(file_list), 0,
+                 (const struct sockaddr *)&src_addr, sizeof(src_addr));
+      if (is_sent == -1) {
+        perror("sendto error\n");
+        exit(EXIT_FAILURE);
+      }
     }
-
-    printf("File received.\n");
   }
 
   close(sockfd);
+  exit(EXIT_SUCCESS);
 
   return 0;
 }
