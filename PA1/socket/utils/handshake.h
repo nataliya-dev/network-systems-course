@@ -1,9 +1,11 @@
 
 
+#ifndef NN_HANDSHAKE_H
+#define NN_HANDSHAKE_H
+
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <dirent.h>
-#include <fcntl.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,3 +41,5 @@ int handshake(const void *command_buf, int sockfd,
   }
   return 1;
 }
+
+#endif

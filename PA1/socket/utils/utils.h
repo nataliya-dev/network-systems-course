@@ -1,15 +1,17 @@
+
+#ifndef NN_UTILS_H
+#define NN_UTILS_H
+
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
 #define MAXLINE 1024
-#define PACKET_SIZE 100
-#define RETRY_LIMIT 10
 
 typedef struct file_list_s {
-  char data[MAXLINE];
-  size_t num_files;
-  size_t status;  // 0=good, 2=bad
+  char data[MAXLINE];  // list of files
+  size_t num_files;    // number of files, comma separated
+  size_t status;       // 0=good, 2=bad
 } file_list_t;
 
 char *duplicate_str(const char *str) {
@@ -44,3 +46,5 @@ int filter_dir(const struct dirent *e) {
   stat(e->d_name, &st);
   return !(st.st_mode & S_IFDIR);
 }
+
+#endif

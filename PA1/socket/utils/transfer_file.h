@@ -1,3 +1,7 @@
+
+#ifndef NN_TRANSFER_FILE_H
+#define NN_TRANSFER_FILE_H
+
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <dirent.h>
@@ -11,13 +15,13 @@
 #include <unistd.h>
 
 #define PACKET_SIZE 100
-#define RETRY_LIMIT 10
+#define NUM_RETRIES 10
 
 typedef struct frame_s {
-  char data[PACKET_SIZE];
-  size_t seq;
-  size_t size;
-  size_t status;  // 0=good, 1=done, 2=abandon
+  char data[PACKET_SIZE];  // data being transferred
+  size_t seq;              // sequence number of the packet
+  size_t size;             // the size of the packet being sent
+  size_t status;           // 0=good, 1=done, 2=abandon
 } frame_t;
 
 int get_file(int file_desc, int sockfd, const struct sockaddr *dest_addrs,
@@ -25,6 +29,7 @@ int get_file(int file_desc, int sockfd, const struct sockaddr *dest_addrs,
              socklen_t *src_addrlen) {
   int is_recv_done = -1;
   frame_t frame;
+  size_t prev_seq = 0;
 
   while (is_recv_done == -1) {
     memset(&frame, 0, sizeof(frame));
@@ -51,11 +56,17 @@ int get_file(int file_desc, int sockfd, const struct sockaddr *dest_addrs,
       is_recv_done = 1;
     }
 
+    if (frame.seq <= prev_seq) {
+      printf("Out of seq frame received.");
+      continue;
+    }
+
     ssize_t is_written = write(file_desc, frame.data, frame.size);
     if (is_written == -1) {
       printf("Write error. Try again.\n");
       break;
     }
+    prev_seq = frame.seq;
   }
   close(file_desc);
   return is_recv_done;
@@ -87,7 +98,7 @@ int send_file(int file_desc, int sockfd, const struct sockaddr *dest_addrs,
     size_t retries = 0;
     int is_acked = 0;
 
-    while (is_acked == 0 && retries <= RETRY_LIMIT) {
+    while (is_acked == 0 && retries <= NUM_RETRIES) {
       ssize_t is_sent =
           sendto(sockfd, &frame, sizeof(frame), 0, dest_addrs, dest_addrlen);
       if (is_sent == -1) {
@@ -123,3 +134,5 @@ int send_file(int file_desc, int sockfd, const struct sockaddr *dest_addrs,
   close(file_desc);
   return is_send_done;
 }
+
+#endif
