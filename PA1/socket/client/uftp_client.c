@@ -13,7 +13,7 @@
 #include "../utils/utils.h"
 
 #define DO_CLIENT_EXIT \
-  1  // whether or not the client should gracefully exit along with the server.
+  0  // whether or not the client should gracefully exit along with the server.
 
 /* Check whether or not the input arguments satisfy program requirements. The
  * hostname and port must be specified. */
