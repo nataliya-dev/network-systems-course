@@ -1,0 +1,42 @@
+int socket(int domain, int type, int protocol);
+        socket() creates an endpoint for communication and returns a file
+        descriptor that refers to that endpoint.  The file descriptor
+        returned by a successful call will be the lowest-numbered file
+        descriptor not currently open for the process.
+
+        The domain argument specifies a communication domain; IPv4, radio, IPv6
+
+        The socket has the indicated type, which specifies the communication semantics. TCP or UDP.
+
+        The protocol specifies a particular protocol to be used with the socket.
+
+int bind(int sockfd, const struct sockaddr *addr,
+        socklen_t addrlen);
+        Assigns a port number to the socket on the local machine. "Assigning a name to a socket."
+        Takes in the address specifief by the address structure and its size is associated by the size.
+
+ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
+              const struct sockaddr *dest_addr, socklen_t addrlen);
+        Used to transmit a message to another socket.
+        sockfd is the file descriptor of the sending socket. The address of the target
+            is given by dest_addr with addrlen specifying its size.
+        Buff is the address of the data.
+        On success, these calls return the number of bytes sent.
+
+ssize_t recvfrom(int socket, void *restrict buffer, size_t length,
+       int flags, struct sockaddr *restrict address,
+       socklen_t *restrict address_len)
+       Receives data from a connectionless datagram socket.
+       The input parameters store the address of the originating machine.
+       The recvfrom() function shall return the length of the message written to the buffer pointed to by the buffer argument.
+
+fcntl() performs one of the operations described below on the
+        open file descriptor fd.  The operation is determined by cmd.
+
+
+The htons() function converts the unsigned short integer hostshort from host byte order to network byte order.
+
+int setsockopt(int socket, int level, int option_name,
+       const void *option_value, socklen_t option_len);
+        SO_RCVTIMEO
+        Sets the timeout value that specifies the maximum amount of time an input function waits until it completes. It accepts a timeval structure with the number of seconds and microseconds specifying the limit on how long to wait for an input operation to complete. If a receive operation has blocked for this much time without receiving additional data, it shall return with a partial count or errno set to [EAGAIN] or [EWOULDBLOCK] if no data is received. The default for this option is zero, which indicates that a receive operation shall not time out. This option takes a timeval structure. Note that not all implementations allow this option to be set.
