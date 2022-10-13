@@ -12,6 +12,8 @@
 #define MAXBUF 8192  /* max I/O buffer size */
 #define LISTENQ 1024 /* second argument to listen() */
 
+char command_buf[MAXLINE];
+
 int is_cmd_arg_valid(int argc, char **argv) {
   if (argc != 2) {
     fprintf(stderr, "Usage: %s <port>\n", argv[0]);
@@ -80,11 +82,72 @@ void echo(int connfd) {
   write(connfd, buf, strlen(httpmsg));
 }
 
+void read_command(int connfd) {
+  int rcvd, fd, bytes_read;
+  // char *ptr;
+
+  bzero(command_buf, MAXLINE);
+  rcvd = recv(connfd, (char *)command_buf, MAXLINE, 0);
+
+  if (rcvd < 0) {
+    printf("recv() error\n");
+    exit(EXIT_FAILURE);
+  } else if (rcvd == 0) {
+    printf("client disconnected\n");
+    exit(EXIT_FAILURE);
+  } else {
+    printf("msg rcvd %s\n", command_buf);
+  }
+
+  command_buf[rcvd] = '\0';
+
+  char *method,  // "GET" or "POST"
+      *uri,      // "/index.html" things before '?'
+      *qs,       // "a=1&b=2"     things after  '?'
+      *prot;     // "HTTP/1.1"
+
+  method = strtok(command_buf, " \t\r\n");
+  uri = strtok(NULL, " \t");
+  prot = strtok(NULL, " \t\r\n");
+
+  printf("method: %s\n", method);
+  printf("uri: %s\n", uri);
+  printf("prot: %s\n", prot);
+
+  const char ch = '/';
+  char *ret;
+  ret = strchr(uri, ch);
+  if (ret == NULL) {
+    printf("No charachter found |%c|\n", ch);
+    exit(EXIT_FAILURE);
+  } else {
+    *ret++;
+  }
+
+  printf("String after |%c| is - |%s|\n", ch, ret);
+  uri = ret;
+
+  if (access(uri, F_OK) == 0) {
+    printf("file exists\n");
+  } else {
+    printf("so such file\n");
+    exit(EXIT_FAILURE);
+  }
+
+  char *code = " 200";
+  char *info = " Document Follows";
+  char header_buf[MAXLINE];
+  sprintf(header_buf, "%s%s", prot, code);
+  sprintf(header_buf, "%s%s", header_buf, info);
+
+  printf("Header %s\n", header_buf);
+}
+
 void *thread(void *vargp) {
   int connfd = *((int *)vargp);
   pthread_detach(pthread_self());
   free(vargp);
-  echo(connfd);
+  read_command(connfd);
   close(connfd);
   return NULL;
 }
