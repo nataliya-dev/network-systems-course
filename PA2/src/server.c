@@ -9,10 +9,11 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#define MAXLINE 8192  /* max text line length */
-#define MAXBUF 100000 /* max I/O buffer size */
-#define LISTENQ 1024  /* second argument to listen() */
-#define TIMEOUT_S 5
+
+#define MAXLINE 8192 /* max text line length */
+#define MAXBUF 8192  /* max I/O buffer size */
+#define LISTENQ 1024 /* second argument to listen() */
+#define TIMEOUT_S 20
 
 // http://netsys.cs.colorado.edu/
 
@@ -79,7 +80,8 @@ PAIR table[] = {{".css", "text/css"},
                 {".jpg", "image/jpg"},
                 {".js", "application/javascript"},
                 {".png", "image/png"},
-                {".txt", "text/plain"}};
+                {".txt", "text/plain"},
+                {".ico", "image/avif"}};
 
 char *get_content_type(char *key) {
   char *ret;
@@ -90,10 +92,10 @@ char *get_content_type(char *key) {
     if (ret == NULL) {
       continue;
     } else {
-      return ret;
+      return pair.value;
     }
   }
-  return ret;
+  return NULL;
 }
 
 void send_data(char data_buf[], int connfd, size_t data_total);
@@ -103,32 +105,29 @@ void send_error(char data_buf[], int connfd) {
   char *code = "500 ";
   char *info = "Internal Server Error";
 
-  sprintf(data_buf, "%s%s", prot, code);
-  sprintf(data_buf, "%s%s", data_buf, info);
+  sprintf(data_buf, "%s%s%s", prot, code, info);
   send_data(data_buf, connfd, strlen(data_buf));
 }
 
 void send_data(char data_buf[], int connfd, size_t data_total) {
-  size_t total = data_total;  // strlen(data_buf);
-  printf("total: %ld\n", total);
+  size_t bytes_written = write(connfd, data_buf, data_total);
+  printf("bytes_written: %ld\n", bytes_written);
 
-  size_t sent = 0;
-  do {
-    size_t bytes = write(connfd, data_buf + sent, total - sent);
-    printf("bytes: %ld\n", bytes);
-    if (bytes < 0) {
-      printf("ERROR writing message to socket\n");
-      send_error(data_buf, connfd);
-      break;
-    }
-    if (bytes == 0) {
-      break;
-    }
-    sent += bytes;
-    printf("sent: %ld\n", sent);
-
-  } while (sent < total);
-  printf("Done sending\n");
+  if (bytes_written < 0) {
+    printf("ERROR bytes_written < 0\n");
+    send_error(data_buf, connfd);
+    return;
+  } else if (bytes_written == 0) {
+    printf("ERROR bytes_written == 0\n");
+    send_error(data_buf, connfd);
+    return;
+  } else if (bytes_written != data_total) {
+    printf("ERROR bytes_written != data_total\n");
+    send_error(data_buf, connfd);
+    return;
+  }
+  printf("Done writing\n");
+  return;
 }
 
 void set_timeout(int keep_alive, int connfd) {
@@ -152,10 +151,8 @@ void wait_and_receive(int connfd) {
   char data_buf[MAXBUF];
   int keep_alive = 1;
 
-  int rcvd, fd, bytes_read;
-  char *method,  // "GET" or "POST"
-      *uri,      // "/index.html"
-      *prot;     // "HTTP/1.1 or HTTP/1.0"
+  int rcvd;
+  char *method, *uri, *prot;
 
   while (keep_alive == 1) {
     bzero(command_buf, MAXLINE);
@@ -209,19 +206,19 @@ void wait_and_receive(int connfd) {
       break;
     }
 
-    *uri++;
+    uri++;
     char *empty = "";
+    char *prefix = "www/";
+    char loca_uri[strlen(prefix) + strlen(uri)];
 
     if (*uri == *empty) {
       printf("Loading default page\n");
       uri = "www/index.html";
     } else {
-      char file_prefix[] = "www/";
-      sprintf(file_prefix, "%s%s", file_prefix, uri);
-      uri = file_prefix;
+      sprintf(loca_uri, "%s%s", prefix, uri);
+      uri = loca_uri;
     }
-
-    printf("local uri: %s\n", uri);
+    printf("loca_uri: %s\n", uri);
 
     if (access(uri, F_OK) == 0) {
       printf("file exists\n");
@@ -232,7 +229,7 @@ void wait_and_receive(int connfd) {
     }
 
     char *content_type = get_content_type(uri);
-    printf("content_type %s\n", content_type);
+    printf("content_type: %s\n", content_type);
     if (content_type == NULL) {
       printf("could not find content type\n");
       send_error(data_buf, connfd);
@@ -243,74 +240,50 @@ void wait_and_receive(int connfd) {
     stat(uri, &st);
     size_t file_size = st.st_size;
     printf("file_size %ld\n", file_size);
-    char file_data[file_size];
 
-    FILE *fp = fopen(uri, "rb");
-    if (fp == NULL) {
+    int file_desc = open(uri, O_RDONLY, S_IRUSR);
+    if (file_desc == -1) {
       printf("error opening file\n");
       send_error(data_buf, connfd);
       break;
     }
 
-    fseek(fp, 0, SEEK_SET);
-    size_t frame_size = fread(file_data, 1, file_size, fp);
-    printf("frame_size: %ld\n", frame_size);
-    fclose(fp);
-
-    // int file_desc = open(uri, O_RDWR);
-    // if (file_desc == -1) {
-    //   printf("error opening file\n");
-    //   send_error(data_buf, connfd);
-    //   break;
-    // }
-
-    // size_t frame_size = read(file_desc, file_data, file_size);
-    // if (frame_size == -1) {
-    //   printf("file read error\n");
-    //   send_error(data_buf, connfd);
-    //   break;
-    // } else if (frame_size == 0) {
-    //   printf("file is empty\n");
-    // }
-
-    // file_data[frame_size] = '\0';
-    // printf("frame_size: %ld\n", frame_size);
-
-    char *code = " 200";
-    char *info = " Document Follows";
+    char *code = " 200 ";
+    char *info = "OK";
     char *c_type = "\r\nContent-Type: ";
     char *c_len = "\r\nContent-Length: ";
     char *c_conn = "\r\nConnection: ";
     char *fc_nl = "\r\n\r\n";
 
-    // memset(&data_buf, 0, MAXBUF);
-    sprintf(data_buf, "%s%s", prot, code);
-    sprintf(data_buf, "%s%s", data_buf, info);
-    sprintf(data_buf, "%s%s", data_buf, c_type);
-    sprintf(data_buf, "%s%s", data_buf, content_type);
-    sprintf(data_buf, "%s%s", data_buf, c_len);
-    sprintf(data_buf, "%s%ld", data_buf, file_size);
-    sprintf(data_buf, "%s%s", data_buf, c_conn);
-    sprintf(data_buf, "%s%s", data_buf, connection);
-    sprintf(data_buf, "%s%s", data_buf, fc_nl);
-
+    bzero(data_buf, MAXBUF);
+    sprintf(data_buf, "%s%s%s%s%s%s%ld%s%s%s", prot, code, info, c_type,
+            content_type, c_len, file_size, c_conn, connection, fc_nl);
     size_t header_total = strlen(data_buf);
     printf("header_total: %ld\n", header_total);
-
-    size_t data_total = file_size + header_total;
-    printf("data_total: %ld\n", data_total);
-
-    sprintf(data_buf, "%s%s", data_buf, file_data);
-    data_buf[data_total] = '\0';
-
     printf("\n=== Header ===\n%s\n", data_buf);
 
-    send_data(data_buf, connfd, data_total);
+    while (1) {
+      size_t frame_size =
+          read(file_desc, data_buf + header_total, MAXBUF - header_total);
+      printf("frame_size: %ld\n", frame_size);
+      if (frame_size == -1) {
+        printf("frame_size == -1, file read error\n");
+        send_error(data_buf, connfd);
+        break;
+      } else if (frame_size == 0) {
+        printf("frame_size == 0, reached end-of-file\n");
+        break;
+      }
+
+      size_t data_total = header_total + frame_size;
+      printf("data_total: %ld\n", data_total);
+
+      send_data(data_buf, connfd, data_total);
+      bzero(data_buf, MAXBUF);
+      header_total = 0;
+    }
 
     set_timeout(keep_alive, connfd);
-    if (keep_alive == 0) {
-      break;
-    }
   }
 
   printf("Done receiving\n");
@@ -336,7 +309,8 @@ int main(int argc, char **argv) {
   }
   int portno = atoi(argv[1]);
 
-  int listenfd, *connfdp, port, clientlen = sizeof(struct sockaddr_in);
+  int listenfd, *connfdp;
+  socklen_t clientlen = sizeof(struct sockaddr_in);
   struct sockaddr_in clientaddr;
   pthread_t tid;
 
