@@ -1,5 +1,6 @@
 
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -9,13 +10,16 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
 #define MAXLINE 8192 /* max text line length */
 #define MAXBUF 8192  /* max I/O buffer size */
 #define LISTENQ 1024 /* second argument to listen() */
+#define POST_MAX 100
 #define TIMEOUT_S 20
 
 // http://netsys.cs.colorado.edu/
+
+// curl -X POST http://localhost:9999/index.html -H "Content-Type: text/html" -d
+// "param1=value1&param2=value2"
 
 int is_cmd_arg_valid(int argc, char **argv) {
   if (argc != 2) {
@@ -98,15 +102,17 @@ char *get_content_type(char *key) {
   return NULL;
 }
 
-void send_data(char data_buf[], int connfd, size_t data_total);
-
 void send_error(char data_buf[], int connfd) {
+  bzero(data_buf, MAXBUF);
+
   char *prot = "HTTP/1.1 ";
   char *code = "500 ";
-  char *info = "Internal Server Error";
+  char *info = "Internal Server Error\r\n";
 
   sprintf(data_buf, "%s%s%s", prot, code, info);
-  send_data(data_buf, connfd, strlen(data_buf));
+  printf("%s\n", data_buf);
+  size_t bytes_written = write(connfd, data_buf, strlen(data_buf));
+  printf("bytes_written: %ld\n", bytes_written);
 }
 
 void send_data(char data_buf[], int connfd, size_t data_total) {
@@ -146,53 +152,65 @@ void set_timeout(int keep_alive, int connfd) {
   }
 }
 
-void wait_and_receive(int connfd) {
+char *duplicate_str(const char *str) {
+  char *newstr = (char *)malloc(strlen(str) + 1);
+  if (newstr) {
+    strcpy(newstr, str);
+  }
+  return newstr;
+}
+
+char *get_connection(char *command_buf, int *keep_alive) {
+  char *pos_keep, *pos_close, *connection;
+  char *command_buf_lower = duplicate_str(command_buf);
+  for (size_t i = 0; i < strlen(command_buf_lower); i++) {
+    command_buf_lower[i] = tolower(command_buf_lower[i]);
+  }
+  pos_keep = strstr(command_buf_lower, "keep-alive");
+  pos_close = strstr(command_buf_lower, "close");
+  if (pos_keep != NULL) {
+    // printf("keep-alive found\n");
+    connection = "keep-alive";
+    *keep_alive = 1;
+  } else if (pos_close != NULL) {
+    // printf("close found\n");
+    connection = "close";
+    *keep_alive = 0;
+  } else {
+    // printf("neither keep-alive nor close found\n");
+    connection = "close";
+    *keep_alive = 0;
+  }
+  return connection;
+  printf("connection: %s\n", connection);
+}
+
+void exchange_data(int connfd) {
   char command_buf[MAXLINE];
   char data_buf[MAXBUF];
   int keep_alive = 1;
-
-  int rcvd;
   char *method, *uri, *prot;
 
   while (keep_alive == 1) {
     bzero(command_buf, MAXLINE);
     bzero(data_buf, MAXBUF);
 
-    rcvd = recv(connfd, (char *)command_buf, MAXLINE, 0);
-    if (rcvd < 0) {
-      printf("recv() error\n");
+    int rec = recv(connfd, command_buf, MAXLINE, 0);
+    if (rec < 0) {
+      printf("nothing to recv() \n");
       break;
-    } else if (rcvd == 0) {
-      printf("client disconnected\n");
+    } else if (rec == 0) {
+      printf("recv() timeout\n");
       break;
-    } else {
-      printf("\n+++ New msg recieved +++\n%s", command_buf);
-      printf("+++ End of msg +++\n\n");
     }
+    printf("\n+++ New msg recieved from %d +++\n", connfd);
+    printf("%s\n", command_buf);
 
-    // command_buf[rcvd] = '\0';
-    char *connection;
-    char *pos_keep, *pos_close;
-    pos_keep = strstr(command_buf, "keep-alive");
-    pos_close = strstr(command_buf, "close");
-
-    if (pos_keep != NULL) {
-      // printf("keep-alive found\n");
-      connection = "keep-alive";
-      keep_alive = 1;
-    } else if (pos_close != NULL) {
-      // printf("close found\n");
-      connection = "close";
-      keep_alive = 0;
-    } else {
-      // printf("neither keep-alive nor close found\n");
-      connection = "close";
-      keep_alive = 0;
-    }
-
+    char *connection = get_connection((char *)command_buf, &keep_alive);
     printf("connection: %s\n", connection);
 
-    method = strtok(command_buf, " \t\r\n");
+    char *command_buf_cp = duplicate_str(command_buf);
+    method = strtok(command_buf_cp, " \t\r\n");
     uri = strtok(NULL, " \t\r\n");
     prot = strtok(NULL, " \t\r\n");
 
@@ -202,6 +220,30 @@ void wait_and_receive(int connfd) {
 
     if (method == NULL || uri == NULL || prot == NULL) {
       printf("Unable to parse message\n");
+      send_error(data_buf, connfd);
+      break;
+    }
+
+    char *post = "POST";
+    char *get = "GET";
+    char *post_msg;
+    if (*method == *post) {
+      printf("POST request\n");
+      size_t i = 0;
+      for (; i < strlen(command_buf); i++) {
+        char c_from_buf = command_buf[i];
+        // printf("%c\n", c_from_buf); /* Print each character of the string. */
+        if (i >= 4 && c_from_buf == '\n' && command_buf[i - 2] == '\n') {
+          // printf("new line detected\n");
+          break;
+        }
+      }
+      post_msg = command_buf + i + 1;
+      printf("post_msgs: %s\n", post_msg);
+    } else if (*method == *get) {
+      printf("GET request\n");
+    } else {
+      printf("Request method not recognized.\n");
       send_error(data_buf, connfd);
       break;
     }
@@ -248,6 +290,14 @@ void wait_and_receive(int connfd) {
       break;
     }
 
+    char *is_html = strstr(content_type, "text/html");
+    char post_buf[POST_MAX];
+    if (is_html != NULL && post_msg != NULL) {
+      sprintf(post_buf, "%s%s%s", "<html><body><pre><h1>", post_msg,
+              "</h1></pre></html>");
+    }
+    printf("post_buf: %s\n", post_buf);
+
     char *code = " 200 ";
     char *info = "OK";
     char *c_type = "\r\nContent-Type: ";
@@ -256,8 +306,9 @@ void wait_and_receive(int connfd) {
     char *fc_nl = "\r\n\r\n";
 
     bzero(data_buf, MAXBUF);
-    sprintf(data_buf, "%s%s%s%s%s%s%ld%s%s%s", prot, code, info, c_type,
-            content_type, c_len, file_size, c_conn, connection, fc_nl);
+    sprintf(data_buf, "%s%s%s%s%s%s%ld%s%s%s%s", prot, code, info, c_type,
+            content_type, c_len, file_size, c_conn, connection, fc_nl,
+            post_buf);
     size_t header_total = strlen(data_buf);
     printf("header_total: %ld\n", header_total);
     printf("\n=== Header ===\n%s\n", data_buf);
@@ -286,20 +337,20 @@ void wait_and_receive(int connfd) {
     set_timeout(keep_alive, connfd);
   }
 
-  printf("Done receiving\n");
+  printf("Done with data exchange with %d\n", connfd);
   return;
 }
 
 void *thread(void *vargp) {
   int connfd = *((int *)vargp);
-  printf("pthread_detach...\n");
+  printf("pthread_detach %d\n", connfd);
   pthread_detach(pthread_self());
   free(vargp);
-  printf("wait_and_receive...\n");
-  wait_and_receive(connfd);
-  printf("close...\n");
+  printf("exchange_data %d\n", connfd);
+  exchange_data(connfd);
+  printf("close %d\n", connfd);
   close(connfd);
-  printf("exit thread...\n");
+  printf("exit thread %d\n", connfd);
   return NULL;
 }
 

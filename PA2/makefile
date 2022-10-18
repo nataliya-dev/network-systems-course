@@ -9,4 +9,4 @@ server_program: src/server.c
 	gcc $(CFLAGS) src/server.c -o server
 
 clean:
-	rm src/server
+	rm server
