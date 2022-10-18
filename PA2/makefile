@@ -1,4 +1,4 @@
-CFLAGS  = -g -Wall
+CFLAGS  = -g -Wall -pthread
 CC = gcc
 
 TARGETS = client_program server_program
@@ -6,10 +6,10 @@ TARGETS = client_program server_program
 all: $(TARGETS)
 
 client_program: src/client.c
-	gcc src/client.c -o src/client
+	gcc $(CFLAGS) src/client.c -o client
 
 server_program: src/server.c
-	gcc -pthread src/server.c -o src/server
+	gcc $(CFLAGS) src/server.c -o server
 
 clean:
-	rm src/client src/server
+	rm client server
