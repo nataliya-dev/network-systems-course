@@ -10,9 +10,9 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#define MAXLINE 8192 /* max text line length */
-#define MAXBUF 8192  /* max I/O buffer size */
-#define LISTENQ 1024 /* second argument to listen() */
+#define MAXLINE 8192
+#define MAXBUF 8192
+#define LISTEBUF 1024
 #define POST_MAX 100
 #define TIMEOUT_S 20
 
@@ -21,6 +21,9 @@
 // curl -X POST http://localhost:9999/index.html -H "Content-Type: text/html" -d
 // "param1=value1&param2=value2"
 
+/**
+ * Inform the user of the interface.
+ */
 int is_cmd_arg_valid(int argc, char **argv) {
   if (argc != 2) {
     fprintf(stderr, "Usage: %s <port>\n", argv[0]);
@@ -30,20 +33,22 @@ int is_cmd_arg_valid(int argc, char **argv) {
   return 1;
 }
 
-int open_listenfd(int portno) {
-  int sockfd, optval = 1;
+/**
+ * Create a passivee socket that accepts incoming connections.
+ */
+int open_listen_socket(int portno) {
+  int socket_fd, optval = 1;
   struct sockaddr_in servaddr;
 
-  sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd == -1) {
+  socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (socket_fd == -1) {
     printf("Socket creation failed...\n");
     exit(EXIT_FAILURE);
   } else {
     printf("Socket successfully created..\n");
   }
 
-  /* Eliminates "Address already in use" error from bind. */
-  if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval,
+  if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval,
                  sizeof(int)) < 0) {
     printf("Socket option failed...\n");
     exit(EXIT_FAILURE);
@@ -51,31 +56,33 @@ int open_listenfd(int portno) {
 
   bzero(&servaddr, sizeof(servaddr));
 
-  // assign IP, PORT
-  servaddr.sin_family = AF_INET;
-  servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  servaddr.sin_port = htons(portno);
+  servaddr.sin_family = AF_INET;  // IPv4
+  servaddr.sin_addr.s_addr =
+      htonl(INADDR_ANY);  // general purpose, for any available interface
+  servaddr.sin_port = htons(portno);  // based on user input
 
-  // Binding newly created socket to given IP and verification
-  if ((bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))) != 0) {
+  if ((bind(socket_fd, (struct sockaddr *)&servaddr, sizeof(servaddr))) != 0) {
     printf("Socket bind failed...\n");
     exit(EXIT_FAILURE);
   } else {
     printf("Socket successfully binded..\n");
   }
 
-  /* Make it a listening socket ready to accept connection requests */
-  if (listen(sockfd, LISTENQ) < 0) {
+  if (listen(socket_fd, LISTEBUF) <
+      0) {  // passive socket that accepts connections
     printf("Listening socket failed...\n");
     exit(EXIT_FAILURE);
   }
 
-  return sockfd;
+  return socket_fd;
 }
 
+/**
+ * Create a one-to-one mapping between MIME types and extension.
+ */
 typedef struct pair {
-  char *key;
-  char *value;
+  char *extension;
+  char *mime;
 } PAIR;
 
 PAIR table[] = {{".css", "text/css"},
@@ -87,21 +94,27 @@ PAIR table[] = {{".css", "text/css"},
                 {".txt", "text/plain"},
                 {".ico", "image/avif"}};
 
+/**
+ * Obtain the MIME type based on the input.
+ */
 char *get_content_type(char *key) {
   char *ret;
   size_t table_size = sizeof(table) / sizeof(table[0]);
   for (int i = 0; i < table_size; i++) {
     PAIR pair = table[i];
-    ret = strstr(key, pair.key);
+    ret = strstr(key, pair.extension);
     if (ret == NULL) {
       continue;
     } else {
-      return pair.value;
+      return pair.mime;
     }
   }
   return NULL;
 }
 
+/**
+ * If anything goes wrong, this is the go-to error to send back to the client.
+ */
 void send_error(char data_buf[], int connfd) {
   bzero(data_buf, MAXBUF);
 
@@ -115,6 +128,9 @@ void send_error(char data_buf[], int connfd) {
   printf("bytes_written: %ld\n", bytes_written);
 }
 
+/**
+ * Sending requested data to the client.
+ */
 void send_data(char data_buf[], int connfd, size_t data_total) {
   size_t bytes_written = write(connfd, data_buf, data_total);
   printf("bytes_written: %ld\n", bytes_written);
@@ -136,6 +152,11 @@ void send_data(char data_buf[], int connfd, size_t data_total) {
   return;
 }
 
+/**
+ * If the user requests to keep the connectin alive then we set the receive
+ * socket to wait for a message for a given amount of time before exiting and
+ * closing the connection.
+ */
 void set_timeout(int keep_alive, int connfd) {
   struct timeval tv;
   tv.tv_usec = 0;
@@ -152,6 +173,9 @@ void set_timeout(int keep_alive, int connfd) {
   }
 }
 
+/**
+ * Duplicate the input string for reuse. Helps isolate some operations.
+ */
 char *duplicate_str(const char *str) {
   char *newstr = (char *)malloc(strlen(str) + 1);
   if (newstr) {
@@ -160,6 +184,10 @@ char *duplicate_str(const char *str) {
   return newstr;
 }
 
+/**
+ * Check whether the client wants the server to keep the connection open or to
+ * close it after having received the message.
+ */
 char *get_connection(char *command_buf, int *keep_alive) {
   char *pos_keep, *pos_close, *connection;
   char *command_buf_lower = duplicate_str(command_buf);
@@ -169,15 +197,12 @@ char *get_connection(char *command_buf, int *keep_alive) {
   pos_keep = strstr(command_buf_lower, "keep-alive");
   pos_close = strstr(command_buf_lower, "close");
   if (pos_keep != NULL) {
-    // printf("keep-alive found\n");
     connection = "keep-alive";
     *keep_alive = 1;
   } else if (pos_close != NULL) {
-    // printf("close found\n");
     connection = "close";
     *keep_alive = 0;
   } else {
-    // printf("neither keep-alive nor close found\n");
     connection = "close";
     *keep_alive = 0;
   }
@@ -185,6 +210,10 @@ char *get_connection(char *command_buf, int *keep_alive) {
   printf("connection: %s\n", connection);
 }
 
+/**
+ * The main workhorse of the server. This is where all the data gets processed
+ * to understand what the server wants.
+ */
 void exchange_data(int connfd) {
   char command_buf[MAXLINE];
   char data_buf[MAXBUF];
@@ -197,10 +226,8 @@ void exchange_data(int connfd) {
 
     int rec = recv(connfd, command_buf, MAXLINE, 0);
     if (rec < 0) {
-      printf("nothing to recv() \n");
       break;
     } else if (rec == 0) {
-      printf("recv() timeout\n");
       break;
     }
     printf("\n+++ New msg recieved from %d +++\n", connfd);
@@ -232,9 +259,9 @@ void exchange_data(int connfd) {
       size_t i = 0;
       for (; i < strlen(command_buf); i++) {
         char c_from_buf = command_buf[i];
-        // printf("%c\n", c_from_buf); /* Print each character of the string. */
-        if (i >= 4 && c_from_buf == '\n' && command_buf[i - 2] == '\n') {
-          // printf("new line detected\n");
+        if (i >= 4 && c_from_buf == '\n' &&
+            command_buf[i - 2] == '\n') {  // two new lines in a row indicate
+                                           // the end of the header
           break;
         }
       }
@@ -248,7 +275,7 @@ void exchange_data(int connfd) {
       break;
     }
 
-    uri++;
+    uri++;  // not include the '/' charachter
     char *empty = "";
     char *prefix = "www/";
     char loca_uri[strlen(prefix) + strlen(uri)];
@@ -260,9 +287,9 @@ void exchange_data(int connfd) {
       sprintf(loca_uri, "%s%s", prefix, uri);
       uri = loca_uri;
     }
-    printf("loca_uri: %s\n", uri);
+    printf("loca_uri: %s\n", uri);  // the full file path from root
 
-    if (access(uri, F_OK) == 0) {
+    if (access(uri, F_OK) == 0) {  // check if we can open the file
       printf("file exists\n");
     } else {
       printf("no such file\n");
@@ -298,7 +325,7 @@ void exchange_data(int connfd) {
     }
     printf("post_buf: %s\n", post_buf);
 
-    char *code = " 200 ";
+    char *code = " 200 ";  // info to put together a header
     char *info = "OK";
     char *c_type = "\r\nContent-Type: ";
     char *c_len = "\r\nContent-Length: ";
@@ -313,7 +340,7 @@ void exchange_data(int connfd) {
     printf("header_total: %ld\n", header_total);
     printf("\n=== Header ===\n%s\n", data_buf);
 
-    while (1) {
+    while (1) {  // send data in chunks as allowed by the size of the buffer
       size_t frame_size =
           read(file_desc, data_buf + header_total, MAXBUF - header_total);
       printf("frame_size: %ld\n", frame_size);
@@ -334,14 +361,14 @@ void exchange_data(int connfd) {
       header_total = 0;
     }
 
-    set_timeout(keep_alive, connfd);
+    set_timeout(keep_alive, connfd);  // keep the connection alive if requested
   }
 
   printf("Done with data exchange with %d\n", connfd);
   return;
 }
 
-void *thread(void *vargp) {
+void *server_thread(void *vargp) {
   int connfd = *((int *)vargp);
   printf("pthread_detach %d\n", connfd);
   pthread_detach(pthread_self());
@@ -360,17 +387,18 @@ int main(int argc, char **argv) {
   }
   int portno = atoi(argv[1]);
 
-  int listenfd, *connfdp;
+  int listener_fd, *server_fd;
   socklen_t clientlen = sizeof(struct sockaddr_in);
   struct sockaddr_in clientaddr;
-  pthread_t tid;
+  pthread_t thread_id;
 
-  listenfd = open_listenfd(portno);
+  listener_fd = open_listen_socket(portno);
 
   while (1) {
-    connfdp = malloc(sizeof(int));
-    *connfdp = accept(listenfd, (struct sockaddr *)&clientaddr, &clientlen);
-    pthread_create(&tid, NULL, thread, connfdp);
+    server_fd = malloc(sizeof(int));
+    *server_fd =
+        accept(listener_fd, (struct sockaddr *)&clientaddr, &clientlen);
+    pthread_create(&thread_id, NULL, server_thread, server_fd);
   }
 
   return 0;
