@@ -6,6 +6,12 @@ population = 32.0*m.pow(10.0, 6)
 percent_users = 0.25
 total_clients = population*percent_users
 print("total_clients: ", total_clients)
+<< << << < Updated upstream
+== == == =
+file_size = 287.6*8.0*m.pow(10, 6)  # bits
+print("file_size: ", file_size)
+file_len = 60.0  # seconds
+>>>>>> > Stashed changes
 
 img = 1080*1920*24*0.1
 print("img: ", img)
@@ -46,3 +52,33 @@ S = 3.0*m.pow(10, 8)  # m/s
 M = RTT*S  # meters
 M = M/1000.0  # km
 print("M: ", M)
+
+# could probably have smaller cities
+# Toluca
+# Puebla
+# Cuernavaca
+# Tezontepec
+
+print("Question 3")
+
+starlink_h = 340*1609.34  # meters
+space_c_h = starlink_h + 100.0*1000.0  # meters,bc 100km higher than spacex
+# https://www.theregister.com/2022/09/23/starlink_broadband_speeds_slow/
+# the speeds in North America reach a median of 60Mbps
+print("space_c_h m : ", space_c_h)
+print("space_c_h km : ", space_c_h/1000.0)
+# orbital period 01:37:39.94 hh:mm:ss
+# https://keisan.casio.com/exec/system/1224665242
+orbital_radius = 7025.14  # km
+flight_v = 7.5325396748244  # km/s
+
+# radio waves speed 300,000 km per second.
+speed = 300000.0*1000.0  # m/s
+dist = space_c_h
+rtt = 2*dist/speed
+print("rtt s : ", rtt)
+print("rtt ms : ", rtt*1000.0)
+
+
+starlink_r = 60.0*8*m.pow(10, 6)  # bits/s
+space_c = starlink_r*1.5  # 50% more than starlink
