@@ -10,16 +10,12 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
 #define MAXLINE 8192
 #define MAXBUF 8192
 #define LISTEBUF 1024
 #define POST_MAX 100
 #define TIMEOUT_S 20
-
-// http://netsys.cs.colorado.edu/
-
-// curl -X POST http://localhost:9999/index.html -H "Content-Type: text/html" -d
-// "param1=value1&param2=value2"
 
 /**
  * Inform the user of the interface.

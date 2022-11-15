@@ -47,11 +47,10 @@ print("N: ", N)
 # Qn 5
 print("\nQUESTION 5")
 
-R = m.pow(10, 9)
-M = 93.45*m.pow(10, 6)*(1609.34)
-S = 3.0*m.pow(10, 8)
+R = 60.0*8*m.pow(10, 6)
+M = 340*1609.34
+S = 300000.0*1000.0
 print("M: ", M)
-
 
 D = M/S
 print("D: ", D)
@@ -63,6 +62,16 @@ print("mars RTT: ", RTT)
 BDP = RTT*R
 print("mars BDP: ", BDP)
 print("mars BDP Gb: ", BDP/(m.pow(10, 9)))
+
+
+p_size = 40000.0
+time_per_pack = p_size/R
+num_packets = 100.0*m.pow(10, 9)/p_size
+all_packs = num_packets*(time_per_pack+M/S)*2
+
+total_time = all_packs
+print("total_time ", total_time)
+print("total_time hr ", total_time/60.0/60.0)
 
 # Qn 6
 print("\nQUESTION 6")
@@ -90,7 +99,7 @@ print("c total_time: ", total_time)
 
 num_sent = 0
 for i in range(1000):
-    if(num_sent >= total_f_size):
+    if (num_sent >= total_f_size):
         break
     num_sent += (p_size*pow(2, i))
 
