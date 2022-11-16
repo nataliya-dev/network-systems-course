@@ -6,6 +6,7 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
   int portno = atoi(argv[1]);
+  int timeout = atoi(argv[2]);
 
   int listener_fd, *server_fd;
   socklen_t clientlen = sizeof(struct sockaddr_in);
