@@ -37,6 +37,8 @@ typedef struct host_name_s {
 pthread_mutex_t hn_lock;
 host_name_t host_list[MAXNAME];
 
+pthread_mutex_t bl_lock;
+
 int is_cmd_arg_valid(int argc, char **argv);
 char *duplicate_str(const char *str);
 char *replace_char(char *str, char find, char replace);

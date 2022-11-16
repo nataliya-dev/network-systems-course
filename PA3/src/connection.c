@@ -54,6 +54,5 @@ void *proxy_thread(void *vargp) {
   free(vargp);
   exchange_data(connfd);
   close(connfd);
-  printf("Closing connection.\n");
   return NULL;
 }

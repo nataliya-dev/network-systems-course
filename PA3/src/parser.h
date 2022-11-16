@@ -13,4 +13,6 @@ int send_cached_file(int connfd, char* uri);
 void remove_cached_files();
 int find_hostname_in_cache(const char* hostname, char* ip);
 void store_hostname_in_cache(const char* hostname, const char* ip);
+int is_blacklisted(const char* hostname);
+void send_forbidden(int connfd);
 #endif

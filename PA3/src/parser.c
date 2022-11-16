@@ -5,7 +5,19 @@ void send_error(int connfd) {
 
   char* prot = "HTTP/1.1 ";
   char* code = "400 ";
-  char* info = "Bad Request\r\n";
+  char* info = "Bad Request\r\n\r\n";
+
+  sprintf(data_buf, "%s%s%s", prot, code, info);
+  // printf("Error msg sent\n%s\n", data_buf);
+  write(connfd, data_buf, strlen(data_buf));
+}
+
+void send_forbidden(int connfd) {
+  char data_buf[MAXBUF];
+
+  char* prot = "ERROR ";
+  char* code = "403 ";
+  char* info = "FORBIDDEN\r\n\r\n";
 
   sprintf(data_buf, "%s%s%s", prot, code, info);
   // printf("Error msg sent\n%s\n", data_buf);
@@ -105,6 +117,26 @@ int add_file_to_cache(char* uri) {
     }
   }
   pthread_mutex_unlock(&fl_lock);
+  return status;
+}
+
+int is_blacklisted(const char* hostname) {
+  pthread_mutex_lock(&bl_lock);
+  int status = -1;
+
+  int file_desc = open("blacklist.txt", O_RDONLY, 0666);
+  if (file_desc == -1) {
+    printf("Open file error. Try again.\n");
+  } else {
+    char data_buf[MAXBUF];
+    read(file_desc, data_buf, MAXBUF);
+    char* found = strstr(data_buf, hostname);
+    if (found) {
+      printf("Forbidden hostname foud.\n");
+      status = 1;
+    }
+  }
+  pthread_mutex_unlock(&bl_lock);
   return status;
 }
 
@@ -266,6 +298,12 @@ void exchange_data(int connfd) {
     extract_host(uri, hostname, sizeof(hostname));
     printf("host: %s\n", hostname);
 
+    int is_bl = is_blacklisted(hostname);
+    if (is_bl == 1) {
+      send_forbidden(connfd);
+      break;
+    }
+
     char ip[MAXIP];
     find_hostname_in_cache(hostname, ip);
 
@@ -286,7 +324,7 @@ void exchange_data(int connfd) {
             "\r\n\r\n");
 
     // printf("writing the following \n%s\n", request_buf);
-    int written = write(host_fd, request_buf, strlen(request_buf));
+    write(host_fd, request_buf, strlen(request_buf));
     // printf("written: %d\n", written);
     // printf("Request to  host sent\n");
 
