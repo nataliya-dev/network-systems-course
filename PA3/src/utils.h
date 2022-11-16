@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define MAXBUF 8192
+#define MAXBUF 81920
 #define LISTENBUF 1024
 
 int is_cmd_arg_valid(int argc, char **argv);

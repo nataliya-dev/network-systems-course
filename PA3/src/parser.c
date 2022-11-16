@@ -55,9 +55,18 @@ int open_io_socket(const char* hostname, const int port) {
   socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd == -1) {
     printf("Socket creation failed...\n");
-    exit(EXIT_FAILURE);
+    return -1;
   } else {
     printf("Socket successfully created..\n");
+  }
+
+  struct timeval tv;
+  tv.tv_usec = 0;
+  tv.tv_sec = 2;
+  if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv,
+                 sizeof tv)) {
+    printf("Socket timeout option failed...\n");
+    return -1;
   }
 
   address = gethostbyname(hostname);
@@ -91,11 +100,10 @@ void exchange_data(int connfd) {
   char data_buf[MAXBUF];
   char recv_buf[MAXBUF];
   char request_buf[MAXBUF];
-  int keep_alive = 1;
   char *method, *uri, *prot;
   int status = 0;
 
-  while (keep_alive == 1) {
+  while (1) {
     bzero(data_buf, MAXBUF);
     bzero(recv_buf, MAXBUF);
     bzero(request_buf, MAXBUF);
@@ -105,15 +113,15 @@ void exchange_data(int connfd) {
       break;
     }
 
-    // printf("\n===== New msg recieved\n");
-    // printf("%s\n", data_buf);
+    printf("\n===== New msg recieved\n");
+    printf("%s\n", data_buf);
 
     char* data_buf_cp = duplicate_str(data_buf);
     method = strtok(data_buf_cp, " \t\r\n");
     uri = strtok(NULL, " \t\r\n");
     prot = strtok(NULL, " \t\r\n");
-    status = is_valid(method, uri, prot);
 
+    status = is_valid(method, uri, prot);
     if (status != 1) {
       send_error(connfd);
       break;
@@ -124,15 +132,40 @@ void exchange_data(int connfd) {
     printf("host: %s\n", hostname);
 
     int host_fd = open_io_socket(hostname, 80);
+    if (host_fd == -1) {
+      printf("Socket creation failed...\n");
+      send_error(connfd);
+      break;
+    } else {
+      printf("Socket successfully created..\n");
+    }
 
-    sprintf(request_buf, "%s%s%s", method, " /index.html ", prot);
+    // sprintf(request_buf, "%s%s%s%s%s%s%s%s", method, " / ", prot, "\r\n",
+    //         "Host: ", hostname, "\r\nConnection: close", "\r\n\r\n");
 
-    printf("writing the following: %s\n", request_buf);
+    sprintf(request_buf, "%s%s%s%s%s%s%s%s%s%s", method, " ", uri, " ", prot,
+            "\r\n", "Host: ", hostname, "\r\nConnection: keep-alive",
+            "\r\n\r\n");
+
+    printf("writing the following \n%s\n", request_buf);
     int written = write(host_fd, request_buf, strlen(request_buf));
     printf("written: %d\n", written);
     printf("Request to  host sent\n");
-    int recvd = read(host_fd, recv_buf, MAXBUF);
-    printf("recvd: %d\n", recvd);
-    printf("recv_buf\n%s\n", recv_buf);
+
+    int recvd = 0;
+
+    do {
+      bzero(recv_buf, MAXBUF);
+      int recvd = recv(host_fd, recv_buf, MAXBUF, 0);
+      if (recvd <= 0) {
+        break;
+      }
+
+      printf("recvd: %d\n", recvd);
+      printf("sizeof(recv_buf): %d\n", recvd);
+      // printf("recv_buf\n%s\n", recv_buf);
+      size_t bytes_written = write(connfd, recv_buf, recvd);
+      printf("bytes_written: %ld\n", bytes_written);
+    } while (recvd > 0);
   }
 }

@@ -14,7 +14,16 @@ int open_listen_socket(int portno) {
 
   if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval,
                  sizeof(int)) < 0) {
-    printf("Socket option failed...\n");
+    printf("Socket address reuse option failed...\n");
+    exit(EXIT_FAILURE);
+  }
+
+  struct timeval tv;
+  tv.tv_usec = 0;
+  tv.tv_sec = 100;
+  if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv,
+                 sizeof tv)) {
+    printf("Socket timeout option failed...\n");
     exit(EXIT_FAILURE);
   }
 
@@ -47,5 +56,6 @@ void *proxy_thread(void *vargp) {
   free(vargp);
   exchange_data(connfd);
   close(connfd);
+  printf("Closing connection.\n");
   return NULL;
 }
