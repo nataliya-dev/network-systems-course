@@ -1,5 +1,7 @@
 #include "parser.h"
 
+int timeout_ = 100;
+
 void send_error(int connfd) {
   char data_buf[MAXBUF];
 
@@ -42,9 +44,11 @@ int is_valid(const char* method, const char* uri, const char* prot) {
   return 1;
 }
 
-void extract_host(const char* szUrl, char* szHost, const size_t size) {
+void extract_host(const char* szUrl, char* szHost, const size_t size,
+                  char* path, char* portnum) {
   const char* p;
   char* q = szHost;
+
   int n = 0;
 
   szHost[0] = '\0';
@@ -52,10 +56,36 @@ void extract_host(const char* szUrl, char* szHost, const size_t size) {
 
   for (p += 2; *p; p++) {
     if (n >= (int)size) break;
-    if (*p == ':' || *p == '/') break;
+    if (*p == '/') {
+      break;
+    }
+    if (*p == ':') {
+      break;
+    }
     *q++ = *p;
     n++;
   }
+
+  if (*p == ':') {
+    for (; *p; p++) {
+      if (n >= (int)size) break;
+      p++;
+      if (!isdigit(*p)) {
+        break;
+      }
+      *portnum++ = *p;
+      n++;
+    }
+  }
+
+  if (*p == '/') {
+    for (; *p; p++) {
+      if (n >= (int)size) break;
+      *path++ = *p;
+      n++;
+    }
+  }
+
   *q = '\0';
 }
 
@@ -70,7 +100,9 @@ int check_file_in_cache(char* uri) {
       printf("File exists\n");
       double time_taken = time(NULL) - file.post_time;
       printf("Time taken %f\n", time_taken);
-      if (time_taken > TIMEOUT) {
+      printf("Timeout %d\n", timeout_);
+
+      if (time_taken > timeout_) {
         status = -1;
       } else {
         status = 1;
@@ -88,7 +120,7 @@ void remove_cached_files() {
   for (size_t i = 0; i < MAXNAME; i++) {
     file_list_t file = file_list[i];
     double time_taken = time(NULL) - file.post_time;
-    if (strlen(file.uri) > 0 && time_taken > TIMEOUT) {
+    if (strlen(file.uri) > 0 && time_taken > timeout_) {
       strcpy(file_list[i].uri, "");
       char* file_name = encode_file_name(file.uri);
       printf("file_name %s\n", file_name);
@@ -250,7 +282,8 @@ void store_hostname_in_cache(const char* hostname, const char* ip) {
   pthread_mutex_unlock(&hn_lock);
 }
 
-void exchange_data(int connfd) {
+void exchange_data(int connfd, int timeout) {
+  timeout_ = timeout;
   char data_buf[MAXBUF];
   char recv_buf[MAXBUF];
   char request_buf[MAXBUF];
@@ -267,8 +300,8 @@ void exchange_data(int connfd) {
       break;
     }
 
-    // printf("\n===== New msg recieved\n");
-    // printf("%s\n", data_buf);
+    printf("\n===== New msg recieved\n");
+    printf("%s\n", data_buf);
 
     char* data_buf_cp = duplicate_str(data_buf);
     method = strtok(data_buf_cp, " \t\r\n");
@@ -295,8 +328,12 @@ void exchange_data(int connfd) {
     }
 
     char hostname[MAXNAME];
-    extract_host(uri, hostname, sizeof(hostname));
+    char path[MAXNAME];
+    char portnum[MAXNAME];
+    extract_host(uri, hostname, sizeof(hostname), path, portnum);
     printf("host: %s\n", hostname);
+    printf("path: %s\n", path);
+    printf("portnum: %s\n", portnum);
 
     int is_bl = is_blacklisted(hostname);
     if (is_bl == 1) {

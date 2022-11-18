@@ -21,6 +21,11 @@
 #define MAXNAME 150
 #define MAXIP 16
 
+struct thread_params_t {
+  int server_fd;
+  int timeout;
+};
+
 typedef struct file_list_s {
   char uri[MAXNAME];
   time_t post_time;

@@ -20,7 +20,7 @@ int open_listen_socket(int portno) {
 
   struct timeval tv;
   tv.tv_usec = 0;
-  tv.tv_sec = 1;
+  tv.tv_sec = 5;
   if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv,
                  sizeof tv)) {
     printf("Socket timeout option failed...\n");
@@ -49,10 +49,10 @@ int open_listen_socket(int portno) {
 }
 
 void *proxy_thread(void *vargp) {
-  int connfd = *((int *)vargp);
+  struct thread_params_t args = *((struct thread_params_t *)vargp);
   pthread_detach(pthread_self());
   free(vargp);
-  exchange_data(connfd);
-  close(connfd);
+  exchange_data(args.server_fd, args.timeout);
+  close(args.server_fd);
   return NULL;
 }

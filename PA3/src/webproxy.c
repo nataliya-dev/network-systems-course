@@ -16,10 +16,14 @@ int main(int argc, char **argv) {
   listener_fd = open_listen_socket(portno);
 
   while (1) {
+    struct thread_params_t *args;
+    args = (struct thread_params_t *)malloc(sizeof(struct thread_params_t));
+    args->timeout = timeout;
     server_fd = malloc(sizeof(int));
+    args->server_fd = *server_fd;
     *server_fd =
         accept(listener_fd, (struct sockaddr *)&clientaddr, &clientlen);
-    pthread_create(&thread_id, NULL, proxy_thread, server_fd);
+    pthread_create(&thread_id, NULL, proxy_thread, (void *)args);
   }
 
   return 0;

@@ -3,7 +3,7 @@
 
 #include "utils.h"
 
-void exchange_data(int connfd);
+void exchange_data(int connfd, int timeout);
 int add_file_to_cache(char* uri);
 int check_file_in_cache(char* uri);
 int is_valid(const char* method, const char* uri, const char* prot);
@@ -15,4 +15,6 @@ int find_hostname_in_cache(const char* hostname, char* ip);
 void store_hostname_in_cache(const char* hostname, const char* ip);
 int is_blacklisted(const char* hostname);
 void send_forbidden(int connfd);
+void extract_host(const char* szUrl, char* szHost, const size_t size,
+                  char* path, char* portnum);
 #endif
